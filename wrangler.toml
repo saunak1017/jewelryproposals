@@ -1,0 +1,6 @@
+name = "jewelry-proposal-app"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-12-01"
+
+# Add the D1 binding named DB in the Cloudflare Pages dashboard:
+# Settings > Functions > D1 database bindings > Variable name: DB
