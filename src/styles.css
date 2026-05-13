@@ -64,7 +64,7 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
 .productCard.lab { border-color: var(--green); }
 .productCard.both { border-color: transparent; background: linear-gradient(white, white) padding-box, linear-gradient(90deg, var(--navy) 0 50%, var(--green) 50% 100%) border-box; border: 3px solid transparent; }
 .cardClick { padding: 14px; cursor: pointer; }
-.productCard img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 18px; background: #f0f0f0; }
+.productCard img { width: 100%; aspect-ratio: 1/1; object-fit: contain; object-position: center; border-radius: 18px; background: #fff; }
 .productCard h2 { font-size: 22px; margin: 14px 0 8px; letter-spacing: -0.02em; }
 .productCard p { color: var(--muted); margin-bottom: 4px; font-weight: 600; }
 .productCard h3 { font-size: 18px; margin: 14px 0 0; color: var(--navy); }
