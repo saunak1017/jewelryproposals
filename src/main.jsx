@@ -61,10 +61,12 @@ function formatCaratWeight(value) {
 }
 function sanitizeDecimalInput(value) {
   const cleaned = String(value || '').replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  const integer = parts[0] || '';
-  const decimal = parts[1] ? parts[1].slice(0, 2) : '';
-  return decimal ? `${integer}.${decimal}` : integer;
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  const integer = cleaned.slice(0, firstDot);
+  const decimalRaw = cleaned.slice(firstDot + 1).replace(/\./g, '');
+  const decimal = decimalRaw.slice(0, 2);
+  return cleaned.endsWith('.') && !decimal ? `${integer}.` : `${integer}.${decimal}`;
 }
 function parsePriceNumber(value) {
   if (typeof value === 'number') return value;
@@ -107,6 +109,10 @@ function optionLabel(variant) {
   const type = variant.diamond_type || 'Option';
   const tcw = formatCaratWeight(variant.total_carat_weight) || 'N/A';
   return `${type} · ${tcw} · ${formatMoney(variant.price)}`;
+}
+function getWeightSummary(group) {
+  const weights = [...new Set(group.variants.map(v => formatCaratWeight(v.total_carat_weight)).filter(Boolean))];
+  return weights.join(', ');
 }
 function acceptedImage(file) {
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -399,12 +405,13 @@ function ProductCard({ group, slug, selected, toggle }) {
   const display = pickDisplayVariant(group);
   const availability = group.hasLab && group.hasNatural ? 'Natural & Lab Grown' : group.hasLab ? 'Lab Grown' : 'Natural';
   const borderClass = group.hasLab && group.hasNatural ? 'both' : group.hasLab ? 'lab' : 'natural';
+  const weightSummary = getWeightSummary(group);
   return <div className={`productCard ${borderClass}`}>
     <button className="check" onClick={toggle}>{selected ? '✓ Selected' : '+ Select'}</button>
     <div onClick={() => navigate(`/proposal/${slug}/item/${encodeURIComponent(group.style_number)}`)} className="cardClick">
       <img src={display.image_data_url || ''} />
       <h2>{group.style_number}</h2>
-      <p>{display.jewelry_category}</p><p>{display.metal} | {formatCaratWeight(display.total_carat_weight)}</p>
+      <p>{display.jewelry_category}</p><p>{display.metal} | {weightSummary || formatCaratWeight(display.total_carat_weight)}</p>
       <span className="badge">{group.hasLab && group.hasNatural ? <><small>Pricing For</small> {availability}</> : availability}</span>
       <h3>{getPriceLabel(group)}</h3>
     </div>
@@ -426,7 +433,7 @@ function ProductDetail({ proposal, group, selection, setSelection, back, review 
     <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
       <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
       {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label>}
-      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><Info label="Price" value={formatMoney(display?.price)}/>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
+      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><p className="priceHighlight"><b>Price:</b> {formatMoney(display?.price)}</p>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
   </div>;
 }
 function Info({ label, value }) { return value ? <p><b>{label}:</b> {value}</p> : null; }

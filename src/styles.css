@@ -101,3 +101,4 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
 .markupCalc h3 { margin: 0 0 10px; font-size: 16px; }
 .calcRow { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; align-items: center; }
 .calcHint { color: var(--muted); font-size: 12px; font-weight: 700; }
+
