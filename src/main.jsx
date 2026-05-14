@@ -445,11 +445,42 @@ function ReviewSelection({ proposal, groups, selection, setSelection, back }) {
     const lab = g.variants.filter(v => diamondClass(v.diamond_type) === 'lab');
     const natural = g.variants.filter(v => diamondClass(v.diamond_type) === 'natural');
     const defaultVariant = natural[0] || lab[0] || g.variants[0];
-    return [{ key: `${g.style_number}-${defaultVariant.id}`, style_number: g.style_number, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }];
+    return [{ key: crypto.randomUUID(), style_number: g.style_number, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }];
   }));
   const [message, setMessage] = useState('');
   function updateLine(idx, patch) { setLines(lines.map((l, i) => i === idx ? { ...l, ...patch } : l)); }
   function removeStyle(style) { const next = { ...selection }; delete next[style]; setSelection(next); setLines(lines.filter(l => l.style_number !== style)); }
+  function removeLine(key) {
+    const remaining = lines.filter(l => l.key !== key);
+    setLines(remaining);
+    const hasStyle = remaining.some(l => l.style_number === lines.find(x => x.key === key)?.style_number);
+    if (!hasStyle) {
+      const style = lines.find(x => x.key === key)?.style_number;
+      if (style) {
+        const next = { ...selection };
+        delete next[style];
+        setSelection(next);
+      }
+    }
+  }
+  function addLineForStyle(style) {
+    const group = groups.find(g => g.style_number === style);
+    if (!group) return;
+    const lab = group.variants.filter(v => diamondClass(v.diamond_type) === 'lab');
+    const natural = group.variants.filter(v => diamondClass(v.diamond_type) === 'natural');
+    const defaultVariant = natural[0] || lab[0] || group.variants[0];
+    setLines(prev => [...prev, { key: crypto.randomUUID(), style_number: style, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }]);
+  }
+  const pricedLines = lines.map(line => {
+    const group = groups.find(g => g.style_number === line.style_number);
+    const variant = group?.variants.find(v => v.id === line.proposal_item_id) || group?.variants[0];
+    const qty = Math.max(0, Number(line.quantity) || 0);
+    const lineTotal = (parsePriceNumber(variant?.price) || 0) * qty;
+    return { line, group, variant, qty, lineTotal };
+  });
+  const summaryStyles = pricedLines.filter(x => x.qty > 0).length;
+  const summaryPieces = pricedLines.reduce((sum, x) => sum + x.qty, 0);
+  const summaryTotal = pricedLines.reduce((sum, x) => sum + x.lineTotal, 0);
   async function submit() {
     setMessage('');
     try {
@@ -457,18 +488,18 @@ function ReviewSelection({ proposal, groups, selection, setSelection, back }) {
       await api.post('/api/submissions', payload);
       localStorage.removeItem(`selection-${proposal.slug}`);
       setSelection({});
-      setMessage('Selection submitted successfully. Thank you.');
+      setMessage('Thank you for your order! We have received your selection and Mehul, Atit, Mayur, or Saunak will reach out shortly to confirm your order. Please let us know if you have any questions');
     } catch (e) { setMessage(e.message); }
   }
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={selectedGroups.length} review={() => {}} />
     <button className="textButton" onClick={back}>← Continue Reviewing</button><h1>Review Selection</h1>
+    {message && <div className="success">{message}</div>}
     {!selectedGroups.length ? <div className="panel"><p>No styles selected yet.</p></div> : <div className="reviewSelectionLayout"><div>
-      {selectedGroups.map((g, idx) => {
-        const lineIndex = lines.findIndex(l => l.style_number === g.style_number);
-        const line = lines[lineIndex];
-        const selectedVariant = g.variants.find(v => v.id === line?.proposal_item_id) || g.variants[0];
-        return <div className="selectionLine" key={g.style_number}><img src={(selectedVariant || pickDisplayVariant(g)).image_data_url || ''}/><div><h3>{g.style_number}</h3><p>{selectedVariant.description}</p><label>Option<select value={line?.proposal_item_id || ''} onChange={e => updateLine(lineIndex, { proposal_item_id: e.target.value })}>{g.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line?.quantity || 1} onChange={e => updateLine(lineIndex, { quantity: e.target.value })}/></label><label>Notes<input value={line?.item_notes || ''} onChange={e => updateLine(lineIndex, { item_notes: e.target.value })}/></label><button className="textButton" onClick={() => removeStyle(g.style_number)}>Remove</button></div></div>;
-      })}</div><div className="panel sticky"><h2>Submit Selection</h2><label>Your Name<input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}/></label><label>Email<input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })}/></label><label>Notes<textarea value={form.customer_notes} onChange={e => setForm({ ...form, customer_notes: e.target.value })}/></label><button onClick={submit}>Submit Selection</button>{message && <div className="success">{message}</div>}</div></div>}
+      {pricedLines.map((entry, idx) => {
+        const { line, group, variant } = entry;
+        if (!group || !variant) return null;
+        return <div className="selectionLine" key={line.key}><img src={(variant || pickDisplayVariant(group)).image_data_url || ''}/><div><h3>{group.style_number}</h3><p>{variant.description}</p><label>Option<select value={line.proposal_item_id || ''} onChange={e => updateLine(idx, { proposal_item_id: e.target.value })}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line.quantity || 1} onChange={e => updateLine(idx, { quantity: e.target.value })}/></label><label>Notes<input value={line.item_notes || ''} onChange={e => updateLine(idx, { item_notes: e.target.value })}/></label><div className="buttonRow"><button className="textButton" onClick={() => addLineForStyle(group.style_number)}>+ Add another option</button><button className="textButton" onClick={() => removeLine(line.key)}>Remove Line</button><button className="textButton" onClick={() => removeStyle(group.style_number)}>Remove Style</button></div></div></div>;
+      })}</div><div className="panel sticky"><h2>Submit Selection</h2><p><b>Styles Selected:</b> {summaryStyles}</p><p><b>Total Pieces:</b> {summaryPieces}</p><p><b>Total Price:</b> {formatMoney(summaryTotal)}</p><label>Your Name<input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}/></label><label>Email<input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })}/></label><label>Notes<textarea value={form.customer_notes} onChange={e => setForm({ ...form, customer_notes: e.target.value })}/></label><button onClick={submit}>Submit Selection</button></div></div>}
   </div>;
 }
 
