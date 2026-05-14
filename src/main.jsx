@@ -53,6 +53,28 @@ function formatMoney(value) {
   if (Number.isFinite(n)) return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
   return text;
 }
+
+function formatCaratWeight(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /\bcts?\b/i.test(text) ? text : `${text} cts`;
+}
+function sanitizeDecimalInput(value) {
+  const cleaned = String(value || '').replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  const integer = cleaned.slice(0, firstDot);
+  const decimalRaw = cleaned.slice(firstDot + 1).replace(/\./g, '');
+  const decimal = decimalRaw.slice(0, 2);
+  return cleaned.endsWith('.') && !decimal ? `${integer}.` : `${integer}.${decimal}`;
+}
+function parsePriceNumber(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return null;
+  const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
 function diamondClass(value) {
   const v = String(value || '').toLowerCase();
   if (v.includes('lab')) return 'lab';
@@ -76,11 +98,21 @@ function pickDisplayVariant(group) {
   return group.variants.find(v => diamondClass(v.diamond_type) === 'natural') || group.variants[0];
 }
 function getPriceLabel(group) {
-  if (group.variants.length === 1) return formatMoney(group.variants[0].price);
-  const lab = group.variants.find(v => diamondClass(v.diamond_type) === 'lab');
-  const natural = group.variants.find(v => diamondClass(v.diamond_type) === 'natural');
-  if (lab && natural) return `Nat ${formatMoney(natural.price)} · Lab ${formatMoney(lab.price)}`;
-  return group.variants.map(v => `${v.diamond_type}: ${formatMoney(v.price)}`).join(' · ');
+  const prices = group.variants.map(v => parsePriceNumber(v.price)).filter(n => Number.isFinite(n));
+  if (!prices.length) return group.variants.length === 1 ? formatMoney(group.variants[0].price) : '';
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  if (min === max) return formatMoney(min);
+  return `From ${formatMoney(min)}${group.variants.length > 1 ? ` to ${formatMoney(max)}` : ''}`;
+}
+function optionLabel(variant) {
+  const type = variant.diamond_type || 'Option';
+  const tcw = formatCaratWeight(variant.total_carat_weight) || 'N/A';
+  return `${type} · ${tcw} · ${formatMoney(variant.price)}`;
+}
+function getWeightSummary(group) {
+  const weights = [...new Set(group.variants.map(v => formatCaratWeight(v.total_carat_weight)).filter(Boolean))];
+  return weights.join(', ');
 }
 function acceptedImage(file) {
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -94,7 +126,7 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
-function compressImage(file, maxSize = 1200, quality = 0.82) {
+function compressImage(file, maxSize = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -222,7 +254,7 @@ function UploadProposal({ password }) {
     if (!file) return;
     setProposal(p => ({ ...p, logo_data_url: '' }));
     setProposal(p => ({ ...p, logo_data_url: '' }));
-    const dataUrl = acceptedImage(file) ? await fileToDataUrl(file) : '';
+    const dataUrl = acceptedImage(file) ? await compressImage(file, 500, 0.8) : '';
     setProposal(p => ({ ...p, logo_data_url: dataUrl }));
   }
   const mergedRows = useMemo(() => rows.map(r => ({ ...r, image_data_url: imageMap[normalizeStyle(r.style_number)] || r.image_data_url || '' })), [rows, imageMap]);
@@ -312,7 +344,10 @@ function SubmissionDetail({ data, password, back }) {
     for (const item of items) {
       if (y > 650) { doc.addPage(); y = 40; }
       if (item.image_data_url) {
-        try { doc.addImage(item.image_data_url, 'JPEG', 40, y, 90, 90); } catch {}
+        try {
+          const format = String(item.image_data_url).includes('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(item.image_data_url, format, 40, y, 90, 90);
+        } catch {}
       }
       doc.setFontSize(13); doc.text(String(item.style_number || ''), 145, y + 15);
       doc.setFontSize(9);
@@ -329,7 +364,7 @@ function SubmissionDetail({ data, password, back }) {
   return <div><button className="textButton" onClick={back}>← Back</button>
     <div className="rowBetween"><div><h1>{submission.prepared_for}</h1><p>{new Date(submission.created_at).toLocaleString()} · Status: {submission.status}</p></div><div className="buttonRow"><button onClick={exportPdf}>Export PDF</button><button onClick={markReviewed}>Mark Reviewed</button></div></div>
     <div className="panel"><h2>Customer Info</h2><p><b>Name:</b> {submission.customer_name || 'Not provided'}</p><p><b>Email:</b> {submission.customer_email || 'Not provided'}</p>{submission.customer_notes && <p><b>Notes:</b> {submission.customer_notes}</p>}</div>
-    <div className="submissionGrid">{items.map(i => <div className="submissionItem" key={i.id}><img src={i.image_data_url || ''} /><div><h3>{i.style_number}</h3><p>{i.description}</p><p>{i.metal} · {i.total_carat_weight} · {i.stone_type}</p><p><b>{i.selected_diamond_type}</b> · Qty {i.quantity} · {formatMoney(i.price)}</p>{i.item_notes && <p>Note: {i.item_notes}</p>}</div></div>)}</div>
+    <div className="submissionGrid">{items.map(i => <div className="submissionItem" key={i.id}><img src={i.image_data_url || ''} /><div><h3>{i.style_number}</h3><p>{i.description}</p><p>{i.metal} · {formatCaratWeight(i.total_carat_weight)} · {i.stone_type}</p><p><b>{i.selected_diamond_type}</b> · Qty {i.quantity} · {formatMoney(i.price)}</p>{i.item_notes && <p>Note: {i.item_notes}</p>}</div></div>)}</div>
   </div>;
 }
 
@@ -357,34 +392,48 @@ function CustomerProposal({ slug, detailStyle }) {
   </div>;
 }
 function CustomerHeader({ proposal, selectedCount, review }) {
-  return <header className="proposalHeader">
+  return <div className="headerShell">
     {proposal.logo_data_url && <img className="logo" src={proposal.logo_data_url} />}
-    <div><p className="eyebrow">Prepared For:</p><h1>{proposal.prepared_for}</h1>{proposal.intro_text && <p className="intro">{proposal.intro_text}</p>}</div>
-    <button className="selectionButton" onClick={review}>Review Selection ({selectedCount})</button>
-  </header>;
+    {proposal.logo_data_url && <p className="logoAddress">589 5th Ave, Suite 1107, New York, NY 10017 | 212-593-2750</p>}
+    <header className="proposalHeader">
+      <div><p className="eyebrow">Prepared For:</p><h1>{proposal.prepared_for}</h1>{proposal.intro_text && <p className="intro">{proposal.intro_text}</p>}</div>
+      <button className="selectionButton" onClick={review}>Review Selection ({selectedCount})</button>
+    </header>
+  </div>;
 }
 function ProductCard({ group, slug, selected, toggle }) {
   const display = pickDisplayVariant(group);
-  const availability = group.hasLab && group.hasNatural ? 'Natural + Lab' : group.hasLab ? 'Lab Grown' : 'Natural';
+  const availability = group.hasLab && group.hasNatural ? 'Natural & Lab Grown' : group.hasLab ? 'Lab Grown' : 'Natural';
   const borderClass = group.hasLab && group.hasNatural ? 'both' : group.hasLab ? 'lab' : 'natural';
+  const weightSummary = getWeightSummary(group);
   return <div className={`productCard ${borderClass}`}>
     <button className="check" onClick={toggle}>{selected ? '✓ Selected' : '+ Select'}</button>
     <div onClick={() => navigate(`/proposal/${slug}/item/${encodeURIComponent(group.style_number)}`)} className="cardClick">
       <img src={display.image_data_url || ''} />
       <h2>{group.style_number}</h2>
-      <p>{display.jewelry_category}</p><p>{display.metal}</p><p>{display.total_carat_weight}</p><p>{display.stone_type}</p>
-      <span className="badge">{availability}</span>
+      <p>{display.jewelry_category}</p><p>{display.metal} | {weightSummary || formatCaratWeight(display.total_carat_weight)}</p>
+      <span className="badge">{group.hasLab && group.hasNatural ? <><small>Pricing For</small> {availability}</> : availability}</span>
       <h3>{getPriceLabel(group)}</h3>
     </div>
   </div>;
 }
 function ProductDetail({ proposal, group, selection, setSelection, back, review }) {
-  const display = pickDisplayVariant(group);
+  const [selectedVariantId, setSelectedVariantId] = useState(() => (pickDisplayVariant(group)?.id || group.variants[0]?.id || ''));
+  const [calcMode, setCalcMode] = useState('multiply');
+  const [markupInput, setMarkupInput] = useState('');
+  const display = group.variants.find(v => v.id === selectedVariantId) || pickDisplayVariant(group);
+  const basePrice = parsePriceNumber(display?.price);
+  const markupValue = Number(markupInput);
+  const retailPrice = Number.isFinite(basePrice) && Number.isFinite(markupValue)
+    ? (calcMode === 'multiply' ? basePrice * markupValue : basePrice * (1 + markupValue / 100))
+    : null;
+
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={Object.keys(selection).length} review={review} />
     <button className="textButton" onClick={back}>← Back to All Styles</button>
-    <div className="detailLayout"><div><img className="detailImage" src={display.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
-      <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{v.total_carat_weight}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
-      {group.variants.map(v => <div className="variantBlock" key={v.id}><h2>{v.diamond_type}</h2><Info label="Jewelry Category" value={v.jewelry_category}/><Info label="Description" value={v.description}/><Info label="Metal" value={v.metal}/><Info label="Diamond Quality" value={v.diamond_quality}/><Info label="Total Carat Weight" value={v.total_carat_weight}/><Info label="Stone Type" value={v.stone_type}/><Info label="Price" value={formatMoney(v.price)}/>{v.notes && <Info label="Notes" value={v.notes}/>}</div>)}</div></div>
+    <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
+      <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
+      {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label>}
+      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><p className="priceHighlight"><b>Price:</b> {formatMoney(display?.price)}</p>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
   </div>;
 }
 function Info({ label, value }) { return value ? <p><b>{label}:</b> {value}</p> : null; }
@@ -396,11 +445,42 @@ function ReviewSelection({ proposal, groups, selection, setSelection, back }) {
     const lab = g.variants.filter(v => diamondClass(v.diamond_type) === 'lab');
     const natural = g.variants.filter(v => diamondClass(v.diamond_type) === 'natural');
     const defaultVariant = natural[0] || lab[0] || g.variants[0];
-    return [{ key: `${g.style_number}-${defaultVariant.id}`, style_number: g.style_number, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }];
+    return [{ key: crypto.randomUUID(), style_number: g.style_number, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }];
   }));
   const [message, setMessage] = useState('');
   function updateLine(idx, patch) { setLines(lines.map((l, i) => i === idx ? { ...l, ...patch } : l)); }
   function removeStyle(style) { const next = { ...selection }; delete next[style]; setSelection(next); setLines(lines.filter(l => l.style_number !== style)); }
+  function removeLine(key) {
+    const remaining = lines.filter(l => l.key !== key);
+    setLines(remaining);
+    const hasStyle = remaining.some(l => l.style_number === lines.find(x => x.key === key)?.style_number);
+    if (!hasStyle) {
+      const style = lines.find(x => x.key === key)?.style_number;
+      if (style) {
+        const next = { ...selection };
+        delete next[style];
+        setSelection(next);
+      }
+    }
+  }
+  function addLineForStyle(style) {
+    const group = groups.find(g => g.style_number === style);
+    if (!group) return;
+    const lab = group.variants.filter(v => diamondClass(v.diamond_type) === 'lab');
+    const natural = group.variants.filter(v => diamondClass(v.diamond_type) === 'natural');
+    const defaultVariant = natural[0] || lab[0] || group.variants[0];
+    setLines(prev => [...prev, { key: crypto.randomUUID(), style_number: style, proposal_item_id: defaultVariant.id, quantity: 1, item_notes: '' }]);
+  }
+  const pricedLines = lines.map(line => {
+    const group = groups.find(g => g.style_number === line.style_number);
+    const variant = group?.variants.find(v => v.id === line.proposal_item_id) || group?.variants[0];
+    const qty = Math.max(0, Number(line.quantity) || 0);
+    const lineTotal = (parsePriceNumber(variant?.price) || 0) * qty;
+    return { line, group, variant, qty, lineTotal };
+  });
+  const summaryStyles = pricedLines.filter(x => x.qty > 0).length;
+  const summaryPieces = pricedLines.reduce((sum, x) => sum + x.qty, 0);
+  const summaryTotal = pricedLines.reduce((sum, x) => sum + x.lineTotal, 0);
   async function submit() {
     setMessage('');
     try {
@@ -408,18 +488,18 @@ function ReviewSelection({ proposal, groups, selection, setSelection, back }) {
       await api.post('/api/submissions', payload);
       localStorage.removeItem(`selection-${proposal.slug}`);
       setSelection({});
-      setMessage('Selection submitted successfully. Thank you.');
+      setMessage('Thank you for your order! We have received your selection and Mehul, Atit, Mayur, or Saunak will reach out shortly to confirm your order. Please let us know if you have any questions');
     } catch (e) { setMessage(e.message); }
   }
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={selectedGroups.length} review={() => {}} />
     <button className="textButton" onClick={back}>← Continue Reviewing</button><h1>Review Selection</h1>
+    {message && <div className="success">{message}</div>}
     {!selectedGroups.length ? <div className="panel"><p>No styles selected yet.</p></div> : <div className="reviewSelectionLayout"><div>
-      {selectedGroups.map((g, idx) => {
-        const lineIndex = lines.findIndex(l => l.style_number === g.style_number);
-        const line = lines[lineIndex];
-        const selectedVariant = g.variants.find(v => v.id === line?.proposal_item_id) || g.variants[0];
-        return <div className="selectionLine" key={g.style_number}><img src={(selectedVariant || pickDisplayVariant(g)).image_data_url || ''}/><div><h3>{g.style_number}</h3><p>{selectedVariant.description}</p><label>Option<select value={line?.proposal_item_id || ''} onChange={e => updateLine(lineIndex, { proposal_item_id: e.target.value })}>{g.variants.map(v => <option value={v.id} key={v.id}>{v.diamond_type} · {formatMoney(v.price)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line?.quantity || 1} onChange={e => updateLine(lineIndex, { quantity: e.target.value })}/></label><label>Notes<input value={line?.item_notes || ''} onChange={e => updateLine(lineIndex, { item_notes: e.target.value })}/></label><button className="textButton" onClick={() => removeStyle(g.style_number)}>Remove</button></div></div>;
-      })}</div><div className="panel sticky"><h2>Submit Selection</h2><label>Your Name<input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}/></label><label>Email<input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })}/></label><label>Notes<textarea value={form.customer_notes} onChange={e => setForm({ ...form, customer_notes: e.target.value })}/></label><button onClick={submit}>Submit Selection</button>{message && <div className="success">{message}</div>}</div></div>}
+      {pricedLines.map((entry, idx) => {
+        const { line, group, variant } = entry;
+        if (!group || !variant) return null;
+        return <div className="selectionLine" key={line.key}><img src={(variant || pickDisplayVariant(group)).image_data_url || ''}/><div><h3>{group.style_number}</h3><p>{variant.description}</p><label>Option<select value={line.proposal_item_id || ''} onChange={e => updateLine(idx, { proposal_item_id: e.target.value })}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line.quantity || 1} onChange={e => updateLine(idx, { quantity: e.target.value })}/></label><label>Notes<input value={line.item_notes || ''} onChange={e => updateLine(idx, { item_notes: e.target.value })}/></label><div className="buttonRow"><button className="textButton" onClick={() => addLineForStyle(group.style_number)}>+ Add another option</button><button className="textButton" onClick={() => removeLine(line.key)}>Remove Line</button><button className="textButton" onClick={() => removeStyle(group.style_number)}>Remove Style</button></div></div></div>;
+      })}</div><div className="panel sticky"><h2>Submit Selection</h2><p><b>Styles Selected:</b> {summaryStyles}</p><p><b>Total Pieces:</b> {summaryPieces}</p><p><b>Total Price:</b> {formatMoney(summaryTotal)}</p><label>Your Name<input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}/></label><label>Email<input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })}/></label><label>Notes<textarea value={form.customer_notes} onChange={e => setForm({ ...form, customer_notes: e.target.value })}/></label><button onClick={submit}>Submit Selection</button></div></div>}
   </div>;
 }
 
