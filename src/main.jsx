@@ -66,6 +66,12 @@ function sanitizeDecimalInput(value) {
   const decimal = parts[1] ? parts[1].slice(0, 2) : '';
   return decimal ? `${integer}.${decimal}` : integer;
 }
+function parsePriceNumber(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return null;
+  const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
 
 function diamondClass(value) {
   const v = String(value || '').toLowerCase();
@@ -90,11 +96,17 @@ function pickDisplayVariant(group) {
   return group.variants.find(v => diamondClass(v.diamond_type) === 'natural') || group.variants[0];
 }
 function getPriceLabel(group) {
-  if (group.variants.length === 1) return formatMoney(group.variants[0].price);
-  const lab = group.variants.find(v => diamondClass(v.diamond_type) === 'lab');
-  const natural = group.variants.find(v => diamondClass(v.diamond_type) === 'natural');
-  if (lab && natural) return `Nat ${formatMoney(natural.price)} · Lab ${formatMoney(lab.price)}`;
-  return group.variants.map(v => `${v.diamond_type}: ${formatMoney(v.price)}`).join(' · ');
+  const prices = group.variants.map(v => parsePriceNumber(v.price)).filter(n => Number.isFinite(n));
+  if (!prices.length) return group.variants.length === 1 ? formatMoney(group.variants[0].price) : '';
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  if (min === max) return formatMoney(min);
+  return `From ${formatMoney(min)}${group.variants.length > 1 ? ` to ${formatMoney(max)}` : ''}`;
+}
+function optionLabel(variant) {
+  const type = variant.diamond_type || 'Option';
+  const tcw = formatCaratWeight(variant.total_carat_weight) || 'N/A';
+  return `${type} · ${tcw} · ${formatMoney(variant.price)}`;
 }
 function acceptedImage(file) {
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -385,7 +397,7 @@ function CustomerHeader({ proposal, selectedCount, review }) {
 }
 function ProductCard({ group, slug, selected, toggle }) {
   const display = pickDisplayVariant(group);
-  const availability = group.hasLab && group.hasNatural ? 'Natural + Lab' : group.hasLab ? 'Lab Grown' : 'Natural';
+  const availability = group.hasLab && group.hasNatural ? 'Natural & Lab Grown' : group.hasLab ? 'Lab Grown' : 'Natural';
   const borderClass = group.hasLab && group.hasNatural ? 'both' : group.hasLab ? 'lab' : 'natural';
   return <div className={`productCard ${borderClass}`}>
     <button className="check" onClick={toggle}>{selected ? '✓ Selected' : '+ Select'}</button>
@@ -393,7 +405,7 @@ function ProductCard({ group, slug, selected, toggle }) {
       <img src={display.image_data_url || ''} />
       <h2>{group.style_number}</h2>
       <p>{display.jewelry_category}</p><p>{display.metal} | {formatCaratWeight(display.total_carat_weight)}</p>
-      <span className="badge">{availability}</span>
+      <span className="badge">{group.hasLab && group.hasNatural ? <><small>Pricing For</small> {availability}</> : availability}</span>
       <h3>{getPriceLabel(group)}</h3>
     </div>
   </div>;
@@ -413,7 +425,7 @@ function ProductDetail({ proposal, group, selection, setSelection, back, review 
     <button className="textButton" onClick={back}>← Back to All Styles</button>
     <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
       <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
-      {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{v.diamond_type} · {formatMoney(v.price)}</option>)}</select></label>}
+      {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label>}
       <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><Info label="Price" value={formatMoney(display?.price)}/>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
   </div>;
 }
@@ -448,7 +460,7 @@ function ReviewSelection({ proposal, groups, selection, setSelection, back }) {
         const lineIndex = lines.findIndex(l => l.style_number === g.style_number);
         const line = lines[lineIndex];
         const selectedVariant = g.variants.find(v => v.id === line?.proposal_item_id) || g.variants[0];
-        return <div className="selectionLine" key={g.style_number}><img src={(selectedVariant || pickDisplayVariant(g)).image_data_url || ''}/><div><h3>{g.style_number}</h3><p>{selectedVariant.description}</p><label>Option<select value={line?.proposal_item_id || ''} onChange={e => updateLine(lineIndex, { proposal_item_id: e.target.value })}>{g.variants.map(v => <option value={v.id} key={v.id}>{v.diamond_type} · {formatMoney(v.price)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line?.quantity || 1} onChange={e => updateLine(lineIndex, { quantity: e.target.value })}/></label><label>Notes<input value={line?.item_notes || ''} onChange={e => updateLine(lineIndex, { item_notes: e.target.value })}/></label><button className="textButton" onClick={() => removeStyle(g.style_number)}>Remove</button></div></div>;
+        return <div className="selectionLine" key={g.style_number}><img src={(selectedVariant || pickDisplayVariant(g)).image_data_url || ''}/><div><h3>{g.style_number}</h3><p>{selectedVariant.description}</p><label>Option<select value={line?.proposal_item_id || ''} onChange={e => updateLine(lineIndex, { proposal_item_id: e.target.value })}>{g.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label><label>Quantity<input type="number" min="1" value={line?.quantity || 1} onChange={e => updateLine(lineIndex, { quantity: e.target.value })}/></label><label>Notes<input value={line?.item_notes || ''} onChange={e => updateLine(lineIndex, { item_notes: e.target.value })}/></label><button className="textButton" onClick={() => removeStyle(g.style_number)}>Remove</button></div></div>;
       })}</div><div className="panel sticky"><h2>Submit Selection</h2><label>Your Name<input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })}/></label><label>Email<input value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })}/></label><label>Notes<textarea value={form.customer_notes} onChange={e => setForm({ ...form, customer_notes: e.target.value })}/></label><button onClick={submit}>Submit Selection</button>{message && <div className="success">{message}</div>}</div></div>}
   </div>;
 }

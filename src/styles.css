@@ -68,7 +68,8 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
 .productCard h2 { font-size: 22px; margin: 14px 0 8px; letter-spacing: -0.02em; }
 .productCard p { color: var(--muted); margin-bottom: 4px; font-weight: 600; }
 .productCard h3 { font-size: 18px; margin: 14px 0 0; color: var(--navy); }
-.badge { display: inline-flex; background: #f4efe4; color: var(--navy); border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 900; margin-top: 10px; }
+.badge { display: inline-flex; align-items: baseline; gap: 6px; background: #f4efe4; color: var(--navy); border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 900; margin-top: 10px; }
+.badge small { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.72; }
 .check { position: absolute; top: 18px; right: 18px; z-index: 2; background: var(--gold); color: var(--navy); padding: 8px 12px; font-size: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.14); }
 .textButton { background: transparent; color: var(--navy); padding: 8px 0; }
 .detailLayout { display: grid; grid-template-columns: minmax(280px, 520px) minmax(0, 1fr); gap: 28px; align-items: start; }
