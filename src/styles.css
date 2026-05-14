@@ -48,8 +48,10 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
 .cardsList { display: grid; gap: 14px; }
 .listCard { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 0; }
 .customerPage { max-width: 1420px; margin: 0 auto; padding: 28px; }
-.proposalHeader { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 22px; background: linear-gradient(135deg, var(--navy), #263f63); color: white; border-radius: 30px; padding: 28px; margin-bottom: 22px; box-shadow: 0 18px 45px rgba(23,36,58,.14); }
-.logo { max-width: 210px; max-height: 90px; object-fit: contain; background: rgba(255,255,255,.9); border-radius: 18px; padding: 10px; }
+.headerShell { display: grid; justify-items: center; margin-bottom: 22px; }
+.proposalHeader { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 22px; background: linear-gradient(135deg, var(--navy), #263f63); color: white; border-radius: 30px; padding: 28px; box-shadow: 0 18px 45px rgba(23,36,58,.14); }
+.logo { max-width: 300px; max-height: 130px; object-fit: contain; background: rgba(255,255,255,.95); border-radius: 18px; padding: 12px; margin-bottom: 8px; }
+.logoAddress { margin: 0 0 14px; color: var(--muted); font-weight: 700; text-align: center; font-size: 14px; }
 .eyebrow { color: var(--gold); text-transform: uppercase; letter-spacing: .15em; font-size: 12px; font-weight: 900; margin-bottom: 4px; }
 .proposalHeader h1 { font-size: clamp(28px, 4vw, 48px); letter-spacing: -0.04em; margin-bottom: 5px; }
 .intro { color: rgba(255,255,255,.86); max-width: 780px; margin-bottom: 0; }
@@ -62,11 +64,12 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
 .productCard.lab { border-color: var(--green); }
 .productCard.both { border-color: transparent; background: linear-gradient(white, white) padding-box, linear-gradient(90deg, var(--navy) 0 50%, var(--green) 50% 100%) border-box; border: 3px solid transparent; }
 .cardClick { padding: 14px; cursor: pointer; }
-.productCard img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 18px; background: #f0f0f0; }
+.productCard img { width: 100%; aspect-ratio: 1/1; object-fit: contain; object-position: center; border-radius: 18px; background: #fff; }
 .productCard h2 { font-size: 22px; margin: 14px 0 8px; letter-spacing: -0.02em; }
 .productCard p { color: var(--muted); margin-bottom: 4px; font-weight: 600; }
 .productCard h3 { font-size: 18px; margin: 14px 0 0; color: var(--navy); }
-.badge { display: inline-flex; background: #f4efe4; color: var(--navy); border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 900; margin-top: 10px; }
+.badge { display: inline-flex; align-items: baseline; gap: 6px; background: #f4efe4; color: var(--navy); border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 900; margin-top: 10px; }
+.badge small { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.72; }
 .check { position: absolute; top: 18px; right: 18px; z-index: 2; background: var(--gold); color: var(--navy); padding: 8px 12px; font-size: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.14); }
 .textButton { background: transparent; color: var(--navy); padding: 8px 0; }
 .detailLayout { display: grid; grid-template-columns: minmax(280px, 520px) minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -93,3 +96,8 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
   .selectionButton { width: 100%; }
   .customerPage, main { padding: 18px; }
 }
+
+.markupCalc { margin-top: 14px; background: #fbf8f2; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.markupCalc h3 { margin: 0 0 10px; font-size: 16px; }
+.calcRow { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; align-items: center; }
+.calcHint { color: var(--muted); font-size: 12px; font-weight: 700; }
