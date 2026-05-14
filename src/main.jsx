@@ -57,7 +57,14 @@ function formatMoney(value) {
 function formatCaratWeight(value) {
   const text = String(value || '').trim();
   if (!text) return '';
-  return /cts?/i.test(text) ? text : `${text} cts`;
+  return /\bcts?\b/i.test(text) ? text : `${text} cts`;
+}
+function sanitizeDecimalInput(value) {
+  const cleaned = String(value || '').replace(/[^0-9.]/g, '');
+  const parts = cleaned.split('.');
+  const integer = parts[0] || '';
+  const decimal = parts[1] ? parts[1].slice(0, 2) : '';
+  return decimal ? `${integer}.${decimal}` : integer;
 }
 
 function diamondClass(value) {
@@ -392,12 +399,22 @@ function ProductCard({ group, slug, selected, toggle }) {
   </div>;
 }
 function ProductDetail({ proposal, group, selection, setSelection, back, review }) {
-  const display = pickDisplayVariant(group);
+  const [selectedVariantId, setSelectedVariantId] = useState(() => (pickDisplayVariant(group)?.id || group.variants[0]?.id || ''));
+  const [calcMode, setCalcMode] = useState('multiply');
+  const [markupInput, setMarkupInput] = useState('');
+  const display = group.variants.find(v => v.id === selectedVariantId) || pickDisplayVariant(group);
+  const basePrice = parsePriceNumber(display?.price);
+  const markupValue = Number(markupInput);
+  const retailPrice = Number.isFinite(basePrice) && Number.isFinite(markupValue)
+    ? (calcMode === 'multiply' ? basePrice * markupValue : basePrice * (1 + markupValue / 100))
+    : null;
+
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={Object.keys(selection).length} review={review} />
     <button className="textButton" onClick={back}>← Back to All Styles</button>
-    <div className="detailLayout"><div><img className="detailImage" src={display.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
+    <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
       <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
-      {group.variants.map(v => <div className="variantBlock" key={v.id}><h2>{v.diamond_type}</h2><Info label="Jewelry Category" value={v.jewelry_category}/><Info label="Description" value={v.description}/><Info label="Metal" value={v.metal}/><Info label="Diamond Quality" value={v.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(v.total_carat_weight)}/><Info label="Stone Type" value={v.stone_type}/><Info label="Price" value={formatMoney(v.price)}/>{v.notes && <Info label="Notes" value={v.notes}/>}</div>)}</div></div>
+      {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{v.diamond_type} · {formatMoney(v.price)}</option>)}</select></label>}
+      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><Info label="Price" value={formatMoney(display?.price)}/>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
   </div>;
 }
 function Info({ label, value }) { return value ? <p><b>{label}:</b> {value}</p> : null; }

@@ -95,3 +95,8 @@ main { padding: 32px; max-width: 1500px; width: 100%; }
   .selectionButton { width: 100%; }
   .customerPage, main { padding: 18px; }
 }
+
+.markupCalc { margin-top: 14px; background: #fbf8f2; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.markupCalc h3 { margin: 0 0 10px; font-size: 16px; }
+.calcRow { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; align-items: center; }
+.calcHint { color: var(--muted); font-size: 12px; font-weight: 700; }
