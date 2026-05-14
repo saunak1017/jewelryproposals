@@ -53,6 +53,20 @@ function formatMoney(value) {
   if (Number.isFinite(n)) return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
   return text;
 }
+
+function formatCaratWeight(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /\bcts?\b/i.test(text) ? text : `${text} cts`;
+}
+function sanitizeDecimalInput(value) {
+  const cleaned = String(value || '').replace(/[^0-9.]/g, '');
+  const parts = cleaned.split('.');
+  const integer = parts[0] || '';
+  const decimal = parts[1] ? parts[1].slice(0, 2) : '';
+  return decimal ? `${integer}.${decimal}` : integer;
+}
+
 function diamondClass(value) {
   const v = String(value || '').toLowerCase();
   if (v.includes('lab')) return 'lab';
@@ -94,7 +108,7 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
-function compressImage(file, maxSize = 1200, quality = 0.82) {
+function compressImage(file, maxSize = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -222,7 +236,7 @@ function UploadProposal({ password }) {
     if (!file) return;
     setProposal(p => ({ ...p, logo_data_url: '' }));
     setProposal(p => ({ ...p, logo_data_url: '' }));
-    const dataUrl = acceptedImage(file) ? await fileToDataUrl(file) : '';
+    const dataUrl = acceptedImage(file) ? await compressImage(file, 500, 0.8) : '';
     setProposal(p => ({ ...p, logo_data_url: dataUrl }));
   }
   const mergedRows = useMemo(() => rows.map(r => ({ ...r, image_data_url: imageMap[normalizeStyle(r.style_number)] || r.image_data_url || '' })), [rows, imageMap]);
@@ -312,7 +326,10 @@ function SubmissionDetail({ data, password, back }) {
     for (const item of items) {
       if (y > 650) { doc.addPage(); y = 40; }
       if (item.image_data_url) {
-        try { doc.addImage(item.image_data_url, 'JPEG', 40, y, 90, 90); } catch {}
+        try {
+          const format = String(item.image_data_url).includes('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(item.image_data_url, format, 40, y, 90, 90);
+        } catch {}
       }
       doc.setFontSize(13); doc.text(String(item.style_number || ''), 145, y + 15);
       doc.setFontSize(9);
@@ -329,7 +346,7 @@ function SubmissionDetail({ data, password, back }) {
   return <div><button className="textButton" onClick={back}>← Back</button>
     <div className="rowBetween"><div><h1>{submission.prepared_for}</h1><p>{new Date(submission.created_at).toLocaleString()} · Status: {submission.status}</p></div><div className="buttonRow"><button onClick={exportPdf}>Export PDF</button><button onClick={markReviewed}>Mark Reviewed</button></div></div>
     <div className="panel"><h2>Customer Info</h2><p><b>Name:</b> {submission.customer_name || 'Not provided'}</p><p><b>Email:</b> {submission.customer_email || 'Not provided'}</p>{submission.customer_notes && <p><b>Notes:</b> {submission.customer_notes}</p>}</div>
-    <div className="submissionGrid">{items.map(i => <div className="submissionItem" key={i.id}><img src={i.image_data_url || ''} /><div><h3>{i.style_number}</h3><p>{i.description}</p><p>{i.metal} · {i.total_carat_weight} · {i.stone_type}</p><p><b>{i.selected_diamond_type}</b> · Qty {i.quantity} · {formatMoney(i.price)}</p>{i.item_notes && <p>Note: {i.item_notes}</p>}</div></div>)}</div>
+    <div className="submissionGrid">{items.map(i => <div className="submissionItem" key={i.id}><img src={i.image_data_url || ''} /><div><h3>{i.style_number}</h3><p>{i.description}</p><p>{i.metal} · {formatCaratWeight(i.total_carat_weight)} · {i.stone_type}</p><p><b>{i.selected_diamond_type}</b> · Qty {i.quantity} · {formatMoney(i.price)}</p>{i.item_notes && <p>Note: {i.item_notes}</p>}</div></div>)}</div>
   </div>;
 }
 
@@ -357,11 +374,14 @@ function CustomerProposal({ slug, detailStyle }) {
   </div>;
 }
 function CustomerHeader({ proposal, selectedCount, review }) {
-  return <header className="proposalHeader">
+  return <div className="headerShell">
     {proposal.logo_data_url && <img className="logo" src={proposal.logo_data_url} />}
-    <div><p className="eyebrow">Prepared For:</p><h1>{proposal.prepared_for}</h1>{proposal.intro_text && <p className="intro">{proposal.intro_text}</p>}</div>
-    <button className="selectionButton" onClick={review}>Review Selection ({selectedCount})</button>
-  </header>;
+    {proposal.logo_data_url && <p className="logoAddress">589 5th Ave, Suite 1107, New York, NY 10017 | 212-593-2750</p>}
+    <header className="proposalHeader">
+      <div><p className="eyebrow">Prepared For:</p><h1>{proposal.prepared_for}</h1>{proposal.intro_text && <p className="intro">{proposal.intro_text}</p>}</div>
+      <button className="selectionButton" onClick={review}>Review Selection ({selectedCount})</button>
+    </header>
+  </div>;
 }
 function ProductCard({ group, slug, selected, toggle }) {
   const display = pickDisplayVariant(group);
@@ -372,19 +392,29 @@ function ProductCard({ group, slug, selected, toggle }) {
     <div onClick={() => navigate(`/proposal/${slug}/item/${encodeURIComponent(group.style_number)}`)} className="cardClick">
       <img src={display.image_data_url || ''} />
       <h2>{group.style_number}</h2>
-      <p>{display.jewelry_category}</p><p>{display.metal}</p><p>{display.total_carat_weight}</p><p>{display.stone_type}</p>
+      <p>{display.jewelry_category}</p><p>{display.metal} | {formatCaratWeight(display.total_carat_weight)}</p>
       <span className="badge">{availability}</span>
       <h3>{getPriceLabel(group)}</h3>
     </div>
   </div>;
 }
 function ProductDetail({ proposal, group, selection, setSelection, back, review }) {
-  const display = pickDisplayVariant(group);
+  const [selectedVariantId, setSelectedVariantId] = useState(() => (pickDisplayVariant(group)?.id || group.variants[0]?.id || ''));
+  const [calcMode, setCalcMode] = useState('multiply');
+  const [markupInput, setMarkupInput] = useState('');
+  const display = group.variants.find(v => v.id === selectedVariantId) || pickDisplayVariant(group);
+  const basePrice = parsePriceNumber(display?.price);
+  const markupValue = Number(markupInput);
+  const retailPrice = Number.isFinite(basePrice) && Number.isFinite(markupValue)
+    ? (calcMode === 'multiply' ? basePrice * markupValue : basePrice * (1 + markupValue / 100))
+    : null;
+
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={Object.keys(selection).length} review={review} />
     <button className="textButton" onClick={back}>← Back to All Styles</button>
-    <div className="detailLayout"><div><img className="detailImage" src={display.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
-      <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{v.total_carat_weight}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
-      {group.variants.map(v => <div className="variantBlock" key={v.id}><h2>{v.diamond_type}</h2><Info label="Jewelry Category" value={v.jewelry_category}/><Info label="Description" value={v.description}/><Info label="Metal" value={v.metal}/><Info label="Diamond Quality" value={v.diamond_quality}/><Info label="Total Carat Weight" value={v.total_carat_weight}/><Info label="Stone Type" value={v.stone_type}/><Info label="Price" value={formatMoney(v.price)}/>{v.notes && <Info label="Notes" value={v.notes}/>}</div>)}</div></div>
+    <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
+      <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
+      {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{v.diamond_type} · {formatMoney(v.price)}</option>)}</select></label>}
+      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><Info label="Price" value={formatMoney(display?.price)}/>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
   </div>;
 }
 function Info({ label, value }) { return value ? <p><b>{label}:</b> {value}</p> : null; }
