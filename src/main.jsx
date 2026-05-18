@@ -10,6 +10,7 @@ const REQUIRED_COLUMNS = [
 ];
 
 const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png'];
+const DEFAULT_LOGO_PATH = '/brand-logo.PNG';
 const api = {
   async get(url, password) {
     const res = await fetch(url, { headers: password ? { Authorization: `Bearer ${password}` } : {} });
@@ -104,6 +105,26 @@ function getPriceLabel(group) {
   const max = Math.max(...prices);
   if (min === max) return formatMoney(min);
   return `From ${formatMoney(min)}${group.variants.length > 1 ? ` to ${formatMoney(max)}` : ''}`;
+}
+function variantsForView(group, pricingView) {
+  if (pricingView === 'lab') return group.variants.filter(v => diamondClass(v.diamond_type) === 'lab');
+  if (pricingView === 'natural') return group.variants.filter(v => diamondClass(v.diamond_type) === 'natural');
+  return group.variants;
+}
+function pickDisplayVariantForView(group, pricingView) {
+  const variants = variantsForView(group, pricingView);
+  if (variants.length) return variants[0];
+  return pickDisplayVariant(group);
+}
+function getPriceLabelForView(group, pricingView) {
+  const variants = variantsForView(group, pricingView);
+  if (!variants.length) return '';
+  const prices = variants.map(v => parsePriceNumber(v.price)).filter(n => Number.isFinite(n));
+  if (!prices.length) return variants.length === 1 ? formatMoney(variants[0].price) : '';
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  if (min === max) return formatMoney(min);
+  return `From ${formatMoney(min)}${variants.length > 1 ? ` to ${formatMoney(max)}` : ''}`;
 }
 function optionLabel(variant) {
   const type = variant.diamond_type || 'Option';
@@ -207,7 +228,7 @@ function AdminApp() {
 }
 
 function UploadProposal({ password }) {
-  const [proposal, setProposal] = useState({ prepared_for: '', intro_text: '', slug: '', logo_data_url: '' });
+  const [proposal, setProposal] = useState({ prepared_for: '', intro_text: '', slug: '', logo_data_url: DEFAULT_LOGO_PATH });
   const [rows, setRows] = useState([]);
   const [imageMap, setImageMap] = useState({});
   const [errors, setErrors] = useState([]);
@@ -254,7 +275,7 @@ function UploadProposal({ password }) {
     if (!file) return;
     setProposal(p => ({ ...p, logo_data_url: '' }));
     setProposal(p => ({ ...p, logo_data_url: '' }));
-    const dataUrl = acceptedImage(file) ? await compressImage(file, 500, 0.8) : '';
+    const dataUrl = acceptedImage(file) ? await fileToDataUrl(file) : '';
     setProposal(p => ({ ...p, logo_data_url: dataUrl }));
   }
   const mergedRows = useMemo(() => rows.map(r => ({ ...r, image_data_url: imageMap[normalizeStyle(r.style_number)] || r.image_data_url || '' })), [rows, imageMap]);
@@ -282,7 +303,7 @@ function UploadProposal({ password }) {
       <label>Prepared For<input value={proposal.prepared_for} onChange={e => setProposal({ ...proposal, prepared_for: e.target.value })} placeholder="Riddles Jewelry" /></label>
       <label>Slug<input value={proposal.slug} onChange={e => setProposal({ ...proposal, slug: normalizeSlug(e.target.value) })} placeholder="riddles-may-2026" /></label>
       <label className="span2">Optional Intro Text<textarea value={proposal.intro_text} onChange={e => setProposal({ ...proposal, intro_text: e.target.value })} placeholder="Any free text to show under Prepared For" /></label>
-      <label>Logo File<input type="file" accept=".jpg,.jpeg,.png,.JPG,.JPEG,.PNG" onChange={e => handleLogo(e.target.files[0])} /></label>
+      <label>Logo File (Optional Override)<input type="file" accept=".jpg,.jpeg,.png,.JPG,.JPEG,.PNG" onChange={e => handleLogo(e.target.files[0])} /><small>Default logo path: /brand-logo.PNG</small></label>
       <label>Excel File<input type="file" accept=".xlsx,.xls" onChange={e => handleExcel(e.target.files[0])} /></label>
       <label className="span2">Product Images<input type="file" accept=".jpg,.jpeg,.png,.JPG,.JPEG,.PNG" multiple onChange={e => handleImages([...e.target.files])} /></label>
     </div>
@@ -370,7 +391,7 @@ function SubmissionDetail({ data, password, back }) {
 
 function CustomerProposal({ slug, detailStyle }) {
   const [proposal, setProposal] = useState(null); const [error, setError] = useState('');
-  const [category, setCategory] = useState('All Styles'); const [selection, setSelection] = useState(() => JSON.parse(localStorage.getItem(`selection-${slug}`) || '{}'));
+  const [category, setCategory] = useState('All Styles'); const [pricingView, setPricingView] = useState('all'); const [selection, setSelection] = useState(() => JSON.parse(localStorage.getItem(`selection-${slug}`) || '{}'));
   const [showReview, setShowReview] = useState(false);
   useEffect(() => { api.get(`/api/proposals/${slug}`).then(setProposal).catch(e => setError(e.message)); }, [slug]);
   useEffect(() => { localStorage.setItem(`selection-${slug}`, JSON.stringify(selection)); }, [selection, slug]);
@@ -378,7 +399,8 @@ function CustomerProposal({ slug, detailStyle }) {
   if (!proposal) return <div className="centerPage"><p>Loading proposal...</p></div>;
   const groups = groupItems(proposal.items);
   const categories = ['All Styles', ...[...new Set(proposal.items.map(i => i.secondary_category).filter(Boolean))]];
-  const filtered = category === 'All Styles' ? groups : groups.filter(g => g.categories.includes(category));
+  const categoryFiltered = category === 'All Styles' ? groups : groups.filter(g => g.categories.includes(category));
+  const filtered = pricingView === 'all' ? categoryFiltered : categoryFiltered.filter(g => pricingView === 'lab' ? g.hasLab : g.hasNatural);
   const selectedCount = Object.keys(selection).length;
   const detailGroup = detailStyle ? groups.find(g => encodeURIComponent(g.style_number) === detailStyle || g.style_number === decodeURIComponent(detailStyle)) : null;
   if (showReview) return <ReviewSelection proposal={proposal} groups={groups} selection={selection} setSelection={setSelection} back={() => setShowReview(false)} />;
@@ -386,23 +408,24 @@ function CustomerProposal({ slug, detailStyle }) {
   return <div className="customerPage">
     <CustomerHeader proposal={proposal} selectedCount={selectedCount} review={() => setShowReview(true)} />
     <nav className="categoryNav">{categories.map(c => <button key={c} className={category===c?'active':''} onClick={() => setCategory(c)}>{c}</button>)}</nav>
+    <nav className="categoryNav pricingNav">{[{ key: 'all', label: 'All Pricing' }, { key: 'natural', label: 'Natural Only' }, { key: 'lab', label: 'LGD Only' }].map(opt => <button key={opt.key} className={pricingView===opt.key?'active':''} onClick={() => setPricingView(opt.key)}>{opt.label}</button>)}</nav>
     <div className="productGrid">{filtered.map(g => <ProductCard key={g.style_number} slug={slug} group={g} selected={!!selection[g.style_number]} toggle={() => setSelection(s => {
       const next = { ...s }; if (next[g.style_number]) delete next[g.style_number]; else next[g.style_number] = { style_number: g.style_number }; return next;
-    })} />)}</div>
+    })} pricingView={pricingView} />)}</div>
   </div>;
 }
 function CustomerHeader({ proposal, selectedCount, review }) {
   return <div className="headerShell">
-    {proposal.logo_data_url && <img className="logo" src={proposal.logo_data_url} />}
-    {proposal.logo_data_url && <p className="logoAddress">589 5th Ave, Suite 1107, New York, NY 10017 | 212-593-2750</p>}
+    <img className="logo" src={proposal.logo_data_url || DEFAULT_LOGO_PATH} />
+    <p className="logoAddress">589 5th Ave, Suite 1107, New York, NY 10017 | 212-593-2750</p>
     <header className="proposalHeader">
       <div><p className="eyebrow">Prepared For:</p><h1>{proposal.prepared_for}</h1>{proposal.intro_text && <p className="intro">{proposal.intro_text}</p>}</div>
       <button className="selectionButton" onClick={review}>Review Selection ({selectedCount})</button>
     </header>
   </div>;
 }
-function ProductCard({ group, slug, selected, toggle }) {
-  const display = pickDisplayVariant(group);
+function ProductCard({ group, slug, selected, toggle, pricingView }) {
+  const display = pickDisplayVariantForView(group, pricingView);
   const availability = group.hasLab && group.hasNatural ? 'Natural & Lab Grown' : group.hasLab ? 'Lab Grown' : 'Natural';
   const borderClass = group.hasLab && group.hasNatural ? 'both' : group.hasLab ? 'lab' : 'natural';
   const weightSummary = getWeightSummary(group);
@@ -412,8 +435,8 @@ function ProductCard({ group, slug, selected, toggle }) {
       <img src={display.image_data_url || ''} />
       <h2>{group.style_number}</h2>
       <p>{display.jewelry_category}</p><p>{display.metal} | {weightSummary || formatCaratWeight(display.total_carat_weight)}</p>
-      <span className="badge">{group.hasLab && group.hasNatural ? <><small>Pricing For</small> {availability}</> : availability}</span>
-      <h3>{getPriceLabel(group)}</h3>
+      <span className="badge">{pricingView === 'all' && group.hasLab && group.hasNatural ? <><small>Pricing For</small> {availability}</> : pricingView === 'lab' ? 'Lab Grown' : pricingView === 'natural' ? 'Natural' : availability}</span>
+      <h3>{getPriceLabelForView(group, pricingView)}</h3>
     </div>
   </div>;
 }

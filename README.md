@@ -48,6 +48,14 @@ Column K is internal logic only. Use exactly:
 
 Column G remains customer-facing and can say things like Natural Diamond, Lab Grown Diamond, Semiprecious Gemstone, Natural & Semiprecious, etc.
 
+
+### Default logo (no re-upload needed)
+
+- Place your permanent logo file at `public/brand-logo.PNG` (case-sensitive filename).
+- New proposals automatically use this default logo path.
+- You can still optionally override per proposal by uploading a different logo in admin.
+- PNG transparency is preserved for uploaded logos and the default logo.
+
 ## Image naming
 
 Product images should be named exactly like the style number, plus extension.
