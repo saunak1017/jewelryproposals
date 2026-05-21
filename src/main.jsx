@@ -357,6 +357,51 @@ function SubmissionDetail({ data, password, back }) {
   const { submission, items } = data;
   const total = items.reduce((sum, i) => sum + ((Number(i.price_number) || 0) * (Number(i.quantity) || 0)), 0);
   async function markReviewed() { await api.patch(`/api/admin/submissions/${submission.id}`, { status: 'Reviewed' }, password); back(); }
+  function exportExcel() {
+    const escapeHtml = value => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+    const rowHtml = items.map(item => {
+      const lineTotal = (Number(item.price_number) || 0) * (Number(item.quantity) || 0);
+      return `<tr>
+        <td>${item.image_data_url ? `<img src="${escapeHtml(item.image_data_url)}" alt="${escapeHtml(item.style_number)}" style="width:84px;height:84px;object-fit:cover;" />` : ''}</td>
+        <td>${escapeHtml(item.style_number)}</td>
+        <td>${escapeHtml(item.description)}</td>
+        <td>${escapeHtml(item.metal)}</td>
+        <td>${escapeHtml(item.total_carat_weight)}</td>
+        <td>${escapeHtml(item.stone_type)}</td>
+        <td>${escapeHtml(item.selected_diamond_type || item.diamond_type)}</td>
+        <td>${escapeHtml(formatMoney(item.price))}</td>
+        <td>${escapeHtml(item.quantity)}</td>
+        <td>${escapeHtml(formatMoney(lineTotal))}</td>
+        <td>${escapeHtml(item.item_notes)}</td>
+      </tr>`;
+    }).join('');
+    const html = `<!doctype html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8" /><style>
+table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 12px; }
+th, td { border: 1px solid #d3d3d3; padding: 6px; vertical-align: top; }
+th { background: #f4f4f4; }
+</style></head>
+<body><table>
+<thead><tr><th>Image</th><th>Style Number</th><th>Description</th><th>Metal</th><th>Total Carat Weight</th><th>Stone Type</th><th>Diamond Type</th><th>Price</th><th>Quantity</th><th>Line Total</th><th>Notes</th></tr></thead>
+<tbody>${rowHtml}
+<tr><td></td><td colspan="8"></td><td><b>${escapeHtml(formatMoney(total))}</b></td><td><b>Quoted Total</b></td></tr>
+</tbody></table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${submission.prepared_for || 'selection'}-summary.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
   async function exportPdf() {
     const doc = new jsPDF({ unit: 'pt', format: 'letter' });
     let y = 40;
@@ -383,7 +428,7 @@ function SubmissionDetail({ data, password, back }) {
     doc.save(`${submission.prepared_for || 'selection'}-summary.pdf`);
   }
   return <div><button className="textButton" onClick={back}>← Back</button>
-    <div className="rowBetween"><div><h1>{submission.prepared_for}</h1><p>{new Date(submission.created_at).toLocaleString()} · Status: {submission.status}</p></div><div className="buttonRow"><button onClick={exportPdf}>Export PDF</button><button onClick={markReviewed}>Mark Reviewed</button></div></div>
+    <div className="rowBetween"><div><h1>{submission.prepared_for}</h1><p>{new Date(submission.created_at).toLocaleString()} · Status: {submission.status}</p></div><div className="buttonRow"><button onClick={exportPdf}>Export PDF</button><button onClick={exportExcel}>Export Excel</button><button onClick={markReviewed}>Mark Reviewed</button></div></div>
     <div className="panel"><h2>Customer Info</h2><p><b>Name:</b> {submission.customer_name || 'Not provided'}</p><p><b>Email:</b> {submission.customer_email || 'Not provided'}</p>{submission.customer_notes && <p><b>Notes:</b> {submission.customer_notes}</p>}</div>
     <div className="submissionGrid">{items.map(i => <div className="submissionItem" key={i.id}><img src={i.image_data_url || ''} /><div><h3>{i.style_number}</h3><p>{i.description}</p><p>{i.metal} · {formatCaratWeight(i.total_carat_weight)} · {i.stone_type}</p><p><b>{i.selected_diamond_type}</b> · Qty {i.quantity} · {formatMoney(i.price)}</p>{i.item_notes && <p>Note: {i.item_notes}</p>}</div></div>)}</div>
   </div>;
