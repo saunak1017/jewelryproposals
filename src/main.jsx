@@ -60,6 +60,25 @@ function formatCaratWeight(value) {
   if (!text) return '';
   return /\bcts?\b/i.test(text) ? text : `${text} cts`;
 }
+
+function getImageDimensions(src) {
+  return new Promise(resolve => {
+    if (!src) {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function fitWithinBox(width, height, maxWidth, maxHeight) {
+  if (!width || !height) return { width: maxWidth, height: maxHeight };
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  return { width: width * scale, height: height * scale };
+}
 function sanitizeDecimalInput(value) {
   const cleaned = String(value || '').replace(/[^0-9.]/g, '');
   const firstDot = cleaned.indexOf('.');
@@ -404,27 +423,96 @@ th { background: #f4f4f4; }
   }
   async function exportPdf() {
     const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-    let y = 40;
-    doc.setFontSize(18); doc.text(`Selection Summary: ${submission.prepared_for}`, 40, y); y += 22;
-    doc.setFontSize(10); doc.text(`Submitted: ${new Date(submission.created_at).toLocaleString()}`, 40, y); y += 24;
-    for (const item of items) {
-      if (y > 650) { doc.addPage(); y = 40; }
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    const gutter = 18;
+    const cardWidth = (pageWidth - (margin * 2) - gutter) / 2;
+    const cardHeight = 220;
+    const imageBoxSize = 104;
+    const rowGap = 16;
+    let y = margin;
+
+    const addHeader = () => {
+      doc.setFontSize(18);
+      doc.text(`Selection Summary: ${submission.prepared_for}`, margin, y);
+      y += 22;
+      doc.setFontSize(10);
+      doc.text(`Submitted: ${new Date(submission.created_at).toLocaleString()}`, margin, y);
+      y += 24;
+    };
+
+    const addNewPage = () => {
+      doc.addPage();
+      y = margin;
+    };
+
+    const drawItemCard = async (item, x, top) => {
+      doc.setDrawColor(220, 220, 220);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(x, top, cardWidth, cardHeight, 10, 10, 'FD');
+
+      const imageX = x + (cardWidth - imageBoxSize) / 2;
+      const imageY = top + 14;
+      doc.setFillColor(246, 246, 246);
+      doc.roundedRect(imageX, imageY, imageBoxSize, imageBoxSize, 8, 8, 'F');
+
       if (item.image_data_url) {
         try {
+          const dimensions = await getImageDimensions(item.image_data_url);
+          const fitted = fitWithinBox(dimensions?.width, dimensions?.height, imageBoxSize, imageBoxSize);
+          const drawX = imageX + (imageBoxSize - fitted.width) / 2;
+          const drawY = imageY + (imageBoxSize - fitted.height) / 2;
           const format = String(item.image_data_url).includes('data:image/png') ? 'PNG' : 'JPEG';
-          doc.addImage(item.image_data_url, format, 40, y, 90, 90);
-        } catch {}
+          doc.addImage(item.image_data_url, format, drawX, drawY, fitted.width, fitted.height);
+        } catch {
+          doc.setFontSize(8);
+          doc.text('Image unavailable', imageX + 16, imageY + (imageBoxSize / 2));
+        }
       }
-      doc.setFontSize(13); doc.text(String(item.style_number || ''), 145, y + 15);
-      doc.setFontSize(9);
-      const lines = [
-        item.description, `Metal: ${item.metal || ''}`, `TCW: ${item.total_carat_weight || ''}`, `Stone Type: ${item.stone_type || ''}`,
-        `Diamond Type: ${item.selected_diamond_type || item.diamond_type || ''}`, `Price: ${formatMoney(item.price)} · Qty: ${item.quantity}`
-      ].filter(Boolean);
-      lines.forEach((line, idx) => doc.text(String(line).slice(0, 95), 145, y + 32 + (idx * 12)));
-      y += 110;
+
+      let textY = imageY + imageBoxSize + 20;
+      const textX = x + 14;
+      const textWidth = cardWidth - 28;
+      doc.setFontSize(12);
+      doc.text(String(item.style_number || ''), textX, textY);
+      textY += 14;
+
+      doc.setFontSize(8.5);
+      const descriptionLines = doc.splitTextToSize(String(item.description || ''), textWidth).slice(0, 2);
+      descriptionLines.forEach(line => {
+        doc.text(line, textX, textY);
+        textY += 10;
+      });
+
+      const detailLines = [
+        `Metal: ${item.metal || ''} · TCW: ${formatCaratWeight(item.total_carat_weight) || ''}`,
+        `Stone: ${item.stone_type || ''}`,
+        `Diamond: ${item.selected_diamond_type || item.diamond_type || ''}`,
+        `Price: ${formatMoney(item.price)} · Qty: ${item.quantity}`
+      ];
+      detailLines.forEach(line => {
+        const wrapped = doc.splitTextToSize(line, textWidth).slice(0, 1);
+        doc.text(wrapped, textX, textY);
+        textY += 10;
+      });
+      if (item.item_notes) {
+        doc.text(doc.splitTextToSize(`Note: ${item.item_notes}`, textWidth).slice(0, 1), textX, textY);
+      }
+    };
+
+    addHeader();
+
+    for (let index = 0; index < items.length; index += 2) {
+      if (y + cardHeight > pageHeight - margin) addNewPage();
+      const rowItems = items.slice(index, index + 2);
+      await Promise.all(rowItems.map((item, offset) => drawItemCard(item, margin + (offset * (cardWidth + gutter)), y)));
+      y += cardHeight + rowGap;
     }
-    doc.setFontSize(12); doc.text(`Quoted Total: ${formatMoney(total)}`, 40, y + 10);
+
+    if (y + 24 > pageHeight - margin) addNewPage();
+    doc.setFontSize(12);
+    doc.text(`Quoted Total: ${formatMoney(total)}`, margin, y + 10);
     doc.save(`${submission.prepared_for || 'selection'}-summary.pdf`);
   }
   return <div><button className="textButton" onClick={back}>← Back</button>
