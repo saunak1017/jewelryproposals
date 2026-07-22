@@ -55,6 +55,16 @@ function formatMoney(value) {
   return text;
 }
 
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return '—';
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+}
+
+function formatMultiplier(value) {
+  if (!Number.isFinite(value)) return '—';
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`;
+}
+
 function formatCaratWeight(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -578,11 +588,20 @@ function ProductDetail({ proposal, group, selection, setSelection, back, review 
   const [selectedVariantId, setSelectedVariantId] = useState(() => (pickDisplayVariant(group)?.id || group.variants[0]?.id || ''));
   const [calcMode, setCalcMode] = useState('multiply');
   const [markupInput, setMarkupInput] = useState('');
+  const [targetRetailInput, setTargetRetailInput] = useState('');
   const display = group.variants.find(v => v.id === selectedVariantId) || pickDisplayVariant(group);
   const basePrice = parsePriceNumber(display?.price);
   const markupValue = Number(markupInput);
   const retailPrice = Number.isFinite(basePrice) && Number.isFinite(markupValue)
     ? (calcMode === 'multiply' ? basePrice * markupValue : basePrice * (1 + markupValue / 100))
+    : null;
+  const targetRetailPrice = parsePriceNumber(targetRetailInput);
+  const reverseCalc = Number.isFinite(basePrice) && basePrice > 0 && Number.isFinite(targetRetailPrice)
+    ? {
+      markupMultiple: targetRetailPrice / basePrice,
+      markupPercent: ((targetRetailPrice - basePrice) / basePrice) * 100,
+      marginPercent: targetRetailPrice > 0 ? ((targetRetailPrice - basePrice) / targetRetailPrice) * 100 : null
+    }
     : null;
 
   return <div className="customerPage"><CustomerHeader proposal={proposal} selectedCount={Object.keys(selection).length} review={review} />
@@ -590,7 +609,7 @@ function ProductDetail({ proposal, group, selection, setSelection, back, review 
     <div className="detailLayout"><div><img className="detailImage" src={display?.image_data_url || ''} /><button onClick={() => setSelection(s => ({ ...s, [group.style_number]: { style_number: group.style_number } }))}>Add to Selection</button></div>
       <div className="detailInfo"><h1>{group.style_number}</h1>{group.variants.length > 1 && <div className="compareBox"><h3>Available Options</h3><table><thead><tr><th>Diamond Type</th><th>Stone Type</th><th>Metal</th><th>TCW</th><th>Price</th></tr></thead><tbody>{group.variants.map(v => <tr key={v.id}><td>{v.diamond_type}</td><td>{v.stone_type}</td><td>{v.metal}</td><td>{formatCaratWeight(v.total_carat_weight)}</td><td>{formatMoney(v.price)}</td></tr>)}</tbody></table></div>}
       {group.variants.length > 1 && <label>Selected Option<select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)}>{group.variants.map(v => <option value={v.id} key={v.id}>{optionLabel(v)}</option>)}</select></label>}
-      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><p className="priceHighlight"><b>Price:</b> {formatMoney(display?.price)}</p>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p></div></div></div></div>
+      <div className="variantBlock"><h2>{display?.diamond_type}</h2><Info label="Jewelry Category" value={display?.jewelry_category}/><Info label="Description" value={display?.description}/><Info label="Metal" value={display?.metal}/><Info label="Diamond Quality" value={display?.diamond_quality}/><Info label="Total Carat Weight" value={formatCaratWeight(display?.total_carat_weight)}/><Info label="Stone Type" value={display?.stone_type}/><p className="priceHighlight"><b>Price:</b> {formatMoney(display?.price)}</p>{display?.notes && <Info label="Notes" value={display?.notes}/>}<div className="markupCalc"><h3>Retail Markup Calculator</h3><div className="calcRow"><select value={calcMode} onChange={e => setCalcMode(e.target.value)}><option value="multiply">Multiply</option><option value="percentage">Percentage</option></select><input value={markupInput} onChange={e => setMarkupInput(sanitizeDecimalInput(e.target.value))} placeholder={calcMode === 'multiply' ? 'e.g. 2.5' : 'e.g. 40'} inputMode="decimal" /><span className="calcHint">{calcMode === 'multiply' ? 'x wholesale' : '% markup'}</span></div><p><b>Estimated Retail:</b> {retailPrice == null ? '—' : formatMoney(retailPrice)}</p><div className="reverseCalc"><h4>Work Backward from Retail</h4><p className="calcHelp">Enter a retail price to see the resulting markup and margin.</p><label>Retail Price<input value={targetRetailInput} onChange={e => setTargetRetailInput(sanitizeDecimalInput(e.target.value))} placeholder="e.g. 2500" inputMode="decimal" /></label><div className="reverseCalcResults"><p><b>Markup Multiple:</b> {reverseCalc ? formatMultiplier(reverseCalc.markupMultiple) : '—'}</p><p><b>Markup Percent:</b> {reverseCalc ? formatPercent(reverseCalc.markupPercent) : '—'}</p><p><b>Margin:</b> {reverseCalc ? formatPercent(reverseCalc.marginPercent) : '—'}</p></div></div></div></div></div></div>
   </div>;
 }
 function Info({ label, value }) { return value ? <p><b>{label}:</b> {value}</p> : null; }
